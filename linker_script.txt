@@ -1,0 +1,15 @@
+{
+  global: *;
+  local: 
+    extern "C++" {
+      *std::*;
+      __cxxabi*;
+      __gcc*;
+      __gxx*;
+      __gnu_cxx*;
+      __cxa*;
+      operator*;
+      __dynamic_cast;
+      __once_proxy
+    };
+};
