@@ -46,6 +46,8 @@
 #include "BinkDecoder.h"
 #include "BinkAudio.h"
 #include "Util.h"
+#include "bd_mem.h"
+#include <new>
 #include <algorithm> // DG: for std::min/max
 
 const int kAudio16Bits = 0x4000;
@@ -102,7 +104,7 @@ float BinkDecoder::GetAudioFloat(BinkCommon::BitReader &bits)
 
 bool BinkDecoder::CreateAudioTrack(uint32_t sampleRate, uint16_t flags)
 {
-	AudioTrack *track = new AudioTrack;
+	AudioTrack *track = new ( bd_malloc( sizeof( AudioTrack ) ) ) AudioTrack;
 
 	// determine frame length
 	uint32_t frameLenBits, nChannels;
@@ -126,7 +128,7 @@ bool BinkDecoder::CreateAudioTrack(uint32_t sampleRate, uint16_t flags)
 	}
 
 	track->nChannelsReal = nChannels;
-	
+
 	if (flags & kAudioUseDCT)
 	{
 		track->transformType = kTransformTypeDCT;
@@ -183,7 +185,7 @@ bool BinkDecoder::CreateAudioTrack(uint32_t sampleRate, uint16_t flags)
 		return false;
 
 	track->blockBufferSize = frameLength * nChannels * sizeof(int16_t);
-	track->blockBuffer     = new int16_t[track->blockBufferSize];
+	track->blockBuffer     = static_cast<int16_t*>( bd_malloc( track->blockBufferSize * sizeof( int16_t ) ) );
 
 	track->blockSize      = blockSize;
 	track->frameLenBits   = frameLenBits;
@@ -200,7 +202,7 @@ bool BinkDecoder::CreateAudioTrack(uint32_t sampleRate, uint16_t flags)
 	track->bufferSize = 0;
 	track->buffer     = 0;
 	track->bytesReadThisFrame = 0;
-	
+
 	// add the track to the track vector
 	audioTracks.push_back(track);
 
@@ -290,7 +292,7 @@ void BinkDecoder::DecodeAudioBlock(uint32_t trackIndex, BinkCommon::BitReader &b
 			{
                 while (i < j)
 				{
-                    if (track->bands[k] == i)
+                    if (track->bands[k] == (uint32_t)i)
                         q = quant[k++];
                     coeff = bits.GetBits(width);
                     if (coeff) 
@@ -319,11 +321,11 @@ void BinkDecoder::DecodeAudioBlock(uint32_t trackIndex, BinkCommon::BitReader &b
 			track->trans.dct.dct_calc(&track->trans.dct,  coeffs);
 
 			// SRS - added float cast for type consistency
-			float mul = (float)track->frameLength;
+			float mul = (float)track->frameLength * 0.5f;
 
 			// vector_fmul_scalar()
-			for (int i = 0; i < track->frameLength; i++)
-				coeffs[i] = coeffs[i] * mul;
+			for (j = 0; j < track->frameLength; j++)
+				coeffs[j] = coeffs[j] * mul;
 		}
 	}
 
@@ -342,13 +344,13 @@ void BinkDecoder::DecodeAudioBlock(uint32_t trackIndex, BinkCommon::BitReader &b
 	track->first = false;
 }
 
-uint32_t BinkDecoder::GetNumAudioTracks()
+uint32_t BinkDecoder::GetNumAudioTracks() const
 {
 	// SRS - added uint32_t cast for type consistency
 	return (uint32_t)audioTracks.size();
 }
 
-AudioInfo BinkDecoder::GetAudioTrackDetails(uint32_t trackIndex)
+AudioInfo BinkDecoder::GetAudioTrackDetails(uint32_t trackIndex) const
 {
 	AudioInfo info;
 	AudioTrack *track = audioTracks[trackIndex];
@@ -368,7 +370,7 @@ AudioInfo BinkDecoder::GetAudioTrackDetails(uint32_t trackIndex)
 	return info;
 }
 
-uint32_t BinkDecoder::GetAudioData(uint32_t trackIndex, int16_t *audioBuffer)
+uint32_t BinkDecoder::GetAudioData(uint32_t trackIndex, int16_t *audioBuffer) const
 {
 	if (!audioBuffer)
 		return 0;
@@ -379,4 +381,9 @@ uint32_t BinkDecoder::GetAudioData(uint32_t trackIndex, int16_t *audioBuffer)
 		memcpy(audioBuffer, track->buffer, std::min(track->bufferSize, track->bytesReadThisFrame));
 
 	return track->bytesReadThisFrame;
+}
+
+const AudioTrack* BinkDecoder::GetAudioTrack(uint32_t trackIndex) const
+{
+	return audioTracks[trackIndex];
 }

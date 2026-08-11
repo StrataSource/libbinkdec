@@ -31,6 +31,7 @@
 #include <string.h>
 //#include "libavutil/common.h"
 //#include "libavutil/mathematics.h"
+#include "bd_mem.h"
 #include "fft.h"
 #include "fft-internal.h"
 
@@ -64,7 +65,7 @@ av_cold int ff_mdct_init(FFTContext *s, int nbits, int inverse, double scale)
     if (ff_fft_init(s, s->mdct_bits - 2, inverse) < 0)
         goto fail;
 
-    s->tcos = (FFTSample*)malloc(n/2 * sizeof(FFTSample));
+    s->tcos = (FFTSample*)bd_malloc(n/2 * sizeof(FFTSample));
 
     if (!s->tcos)
         goto fail;
@@ -208,7 +209,7 @@ void ff_mdct_calc_c(FFTContext *s, FFTSample *out, const FFTSample *input)
 
 av_cold void ff_mdct_end(FFTContext *s)
 {
-    free(s->tcos);
+    bd_free(s->tcos);
     s->tcos = 0;
     ff_fft_end(s);
 }

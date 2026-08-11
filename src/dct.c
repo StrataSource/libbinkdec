@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <math.h>
 //#include "libavutil/mathematics.h"
+#include "bd_mem.h"
 #include "dct.h"
 #include "dct32.h"
 
@@ -203,14 +204,14 @@ av_cold int ff_dct_init(DCTContext *s, int nbits, enum DCTTransformType inverse)
 
         s->costab = ff_cos_tabs[nbits+2];
 
-        s->csc2 = (FFTSample*)malloc(n/2 * sizeof(FFTSample));
+        s->csc2 = (FFTSample*)bd_malloc(n/2 * sizeof(FFTSample));
 
         // SRS - added check for failed malloc
         if (!s->csc2)
             return -1;
 
-        if (ff_rdft_init(&s->rdft, nbits, inverse == DCT_III) < 0) {
-            free(s->csc2);
+        if (ff_rdft_init(&s->rdft, nbits, inverse == DCT_III ? IDFT_C2R : DFT_R2C) < 0) {
+            bd_free(s->csc2);
             s->csc2 = 0;
             return -1;
         }
@@ -236,6 +237,6 @@ av_cold int ff_dct_init(DCTContext *s, int nbits, enum DCTTransformType inverse)
 av_cold void ff_dct_end(DCTContext *s)
 {
     ff_rdft_end(&s->rdft);
-    free(s->csc2);
+    bd_free(s->csc2);
     s->csc2 = 0;
 }

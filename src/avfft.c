@@ -25,20 +25,20 @@
  */
 
 //#include "libavutil/mem.h"
+#include "bd_mem.h"
 #include "avfft.h"
 #include "fft.h"
 #include "rdft.h"
 #include "dct.h"
-#include <stdlib.h>
 
 /* FFT */
 
 FFTContext *av_fft_init(int nbits, int inverse)
 {
-    FFTContext *s = (FFTContext*)malloc(sizeof(*s));
+    FFTContext *s = (FFTContext*)bd_malloc(sizeof(*s));
 
     if (s && ff_fft_init(s, nbits, inverse)) {
-        free(s);
+        bd_free(s);
         s = 0;
     }
 
@@ -59,7 +59,7 @@ void av_fft_end(FFTContext *s)
 {
     if (s) {
         ff_fft_end(s);
-        free(s);
+        bd_free(s);
     }
 }
 
@@ -67,10 +67,10 @@ void av_fft_end(FFTContext *s)
 
 FFTContext *av_mdct_init(int nbits, int inverse, double scale)
 {
-    FFTContext *s = (FFTContext*)malloc(sizeof(*s));
+    FFTContext *s = (FFTContext*)bd_malloc(sizeof(*s));
 
     if (s && ff_mdct_init(s, nbits, inverse, scale)) {
-        free(s);
+        bd_free(s);
         s = 0;
     }
 
@@ -96,7 +96,7 @@ void av_mdct_end(FFTContext *s)
 {
     if (s) {
         ff_mdct_end(s);
-        free(s);
+        bd_free(s);
         s = 0;
     }
 }

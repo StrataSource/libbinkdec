@@ -47,6 +47,7 @@
 #include "Util.h"
 #include "LogError.h"
 #include "binkdata.h"
+#include "bd_mem.h"
 #include <algorithm> // DG: for std::min/max
 
 static const uint8_t bink_rlelens[4] = { 4, 8, 12, 32 };
@@ -97,7 +98,7 @@ void BinkDecoder::InitBundles()
 
 	for (int i = 0; i < BINK_NB_SRC; i++)
 	{
-		bundle[i].data = new uint8_t[blocks * 64];
+		bundle[i].data = static_cast<uint8_t*>( bd_malloc( blocks * 64 ) );
 		bundle[i].data_end = bundle[i].data + blocks * 64;
 	}
 }
@@ -107,7 +108,7 @@ void BinkDecoder::FreeBundles()
 	for (int i = 0; i < BINK_NB_SRC; i++)
 		if (bundle[i].data)
 		{
-			delete[] bundle[i].data;
+			bd_free( bundle[i].data );
 			bundle[i].data = NULL;
 		}
 }
@@ -232,7 +233,7 @@ int CheckReadVal(BinkCommon::BitReader &bits, Bundle *b, int &t)
 {
 	if (!b->cur_dec || (b->cur_dec > b->cur_ptr))
         return 0;
-	
+
 	t = bits.GetBits(b->len);
 
 	if (!t) {
@@ -456,7 +457,7 @@ int BinkDecoder::ReadDCs(BinkCommon::BitReader &bits, Bundle *b, int start_bits,
                 v += v2;
                 *dst++ = v;
                 if (v < -32768 || v > 32767) {
-					BinkCommon::LogError("DC value went out of bounds: " + std::to_string(v));
+					BinkCommon::LogError(("DC value went out of bounds: " + std::to_string(v)).c_str());
                     return -1;
                 }
             }
@@ -476,18 +477,18 @@ int BinkDecoder::ReadDCs(BinkCommon::BitReader &bits, Bundle *b, int start_bits,
  * @param c      decoder context
  * @param bundle bundle number
  */
-int BinkDecoder::GetValue(int bundle)
+int BinkDecoder::GetValue(int b)
 {
 	// TODO - checkme
     int ret;
 
-    if (bundle < BINK_SRC_X_OFF || bundle == BINK_SRC_RUN)
-        return *this->bundle[bundle].cur_ptr++;
-    if (bundle == BINK_SRC_X_OFF || bundle == BINK_SRC_Y_OFF)
-        return (int8_t)*this->bundle[bundle].cur_ptr++;
+    if (b < BINK_SRC_X_OFF || b == BINK_SRC_RUN)
+        return *this->bundle[b].cur_ptr++;
+    if (b == BINK_SRC_X_OFF || b == BINK_SRC_Y_OFF)
+        return (int8_t)*this->bundle[b].cur_ptr++;
 
-    ret = *(int16_t*)this->bundle[bundle].cur_ptr;
-    this->bundle[bundle].cur_ptr += 2;
+    ret = *(int16_t*)this->bundle[b].cur_ptr;
+    this->bundle[b].cur_ptr += 2;
     return ret;
 }
 
@@ -758,7 +759,7 @@ int BinkDecoder::DecodePlane(BinkCommon::BitReader &bits, int plane_idx, int is_
 	int bw = is_chroma ? (frameWidth  + 15) >> 4 : (frameWidth  + 7) >> 3;
 	int bh = is_chroma ? (frameHeight + 15) >> 4 : (frameHeight + 7) >> 3;
 	int width = planes[plane_idx].width;
-	int height = planes[plane_idx].height;
+	//int height = planes[plane_idx].height;
 	int stride = planes[plane_idx].pitch;
 
 	InitLengths(std::max(width, (int)8), bw);
@@ -766,7 +767,6 @@ int BinkDecoder::DecodePlane(BinkCommon::BitReader &bits, int plane_idx, int is_
 	for (int i = 0; i < BINK_NB_SRC; i++)
 		ReadBundle(bits, i);
 
-	
     ref_start = planes[plane_idx].last ? planes[plane_idx].last
                                        : planes[plane_idx].current;
 
@@ -808,7 +808,7 @@ int BinkDecoder::DecodePlane(BinkCommon::BitReader &bits, int plane_idx, int is_
             blk = GetValue(BINK_SRC_BLOCK_TYPES);
 
             // 16x16 block type on odd line means part of the already decoded block, so skip it
-            if ((by & 1) && blk == SCALED_BLOCK) {
+            if (((by & 1) || (bx & 1)) && blk == SCALED_BLOCK) {
                 bx++;
                 dst  += 8;
                 prev += 8;
@@ -1084,20 +1084,22 @@ int BinkDecoder::DecodeFrame(BinkCommon::BitReader &bits)
 #define A3  3784
 #define A4 -5352
 
+#define MUL(X,Y) ((int)((unsigned)(X) * (Y)) >> 11)
+
 #define IDCT_TRANSFORM(dest,s0,s1,s2,s3,s4,s5,s6,s7,d0,d1,d2,d3,d4,d5,d6,d7,munge,src) {\
     const int a0 = (src)[s0] + (src)[s4]; \
     const int a1 = (src)[s0] - (src)[s4]; \
     const int a2 = (src)[s2] + (src)[s6]; \
-    const int a3 = (A1*((src)[s2] - (src)[s6])) >> 11; \
+    const int a3 = MUL(A1, (src)[s2] - (src)[s6]); \
     const int a4 = (src)[s5] + (src)[s3]; \
     const int a5 = (src)[s5] - (src)[s3]; \
     const int a6 = (src)[s1] + (src)[s7]; \
     const int a7 = (src)[s1] - (src)[s7]; \
     const int b0 = a4 + a6; \
-    const int b1 = (A3*(a5 + a7)) >> 11; \
-    const int b2 = ((A4*a5) >> 11) - b0 + b1; \
-    const int b3 = (A1*(a6 - a4) >> 11) - b2; \
-    const int b4 = ((A2*a7) >> 11) + b3 - b1; \
+    const int b1 = MUL(A3, a5 + a7); \
+    const int b2 = MUL(A4, a5) - b0 + b1; \
+    const int b3 = MUL(A1, a6 - a4) - b2; \
+    const int b4 = MUL(A2, a7) + b3 - b1; \
     (dest)[d0] = munge(a0+a2   +b0); \
     (dest)[d1] = munge(a1+a3-a2+b2); \
     (dest)[d2] = munge(a1-a3+a2+b3); \

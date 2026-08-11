@@ -22,56 +22,23 @@
 
 namespace BinkCommon {
 
-bool FileStream::Open(const std::string &fileName)
+void FileStream::Open( bdec_file_io_t io, void *usrData )
 {
-	file.open(fileName.c_str(), std::ifstream::in | std::ifstream::binary);
-	if (!file.is_open())
-	{
-		// log error
-		return false;
-	}
-
-	return true;
-}
-
-bool FileStream::Is_Open()
-{
-	return file.is_open();
-}
-
-void FileStream::Close()
-{
-	file.close();
-}
-
-int32_t FileStream::ReadBytes(uint8_t *data, uint32_t nBytes)
-{
-	file.read(reinterpret_cast<char*>(data), nBytes);
-
-	if (file.eof()) {
-		return 0;
-	}
-	else if (file.fail()) {
-		return 0;
-	}
-	else if (file.bad()) {
-		return 0;
-	}
-
-	return static_cast<int32_t>(file.gcount());
+	m_io = io;
+	m_usrData = usrData;
 }
 
 uint32_t FileStream::ReadUint32LE()
 {
-	uint32_t value;
-	file.read(reinterpret_cast<char*>(&value), 4);
+	uint32_t value = 0;
+	m_io.read( &value, sizeof( value ), m_usrData );
 	return value;
 }
 
 uint32_t FileStream::ReadUint32BE()
 {
-	uint32_t value;
-	file.read(reinterpret_cast<char*>(&value), 4);
+	uint32_t value = 0;
+	m_io.read( &value, sizeof( value ), m_usrData );
 #ifdef _MSC_VER
 	return _byteswap_ulong(value);
 #else // DG: provide alternative for GCC/clang
@@ -81,15 +48,15 @@ uint32_t FileStream::ReadUint32BE()
 
 uint16_t FileStream::ReadUint16LE()
 {
-	uint16_t value;
-	file.read(reinterpret_cast<char*>(&value), 2);
+	uint16_t value = 0;
+	m_io.read( &value, sizeof( value ), m_usrData );
 	return value;
 }
 
 uint16_t FileStream::ReadUint16BE()
 {
-	uint16_t value;
-	file.read(reinterpret_cast<char*>(&value), 2);
+	uint16_t value = 0;
+	m_io.read( &value, sizeof( value ), m_usrData );
 #ifdef _MSC_VER
 	return _byteswap_ushort(value);
 #else // DG: provide alternative for GCC/clang
@@ -99,49 +66,20 @@ uint16_t FileStream::ReadUint16BE()
 
 uint8_t FileStream::ReadByte()
 {
-	uint8_t value;
-	file.read(reinterpret_cast<char*>(&value), 1);
+	uint8_t value = 0;
+	m_io.read( &value, sizeof( value ), m_usrData );
 	return value;
 }
 
 bool FileStream::Seek(int32_t offset, SeekDirection direction)
 {
-	if (kSeekStart == direction) {
-		file.seekg(offset, std::ios::beg);
-	}
-	else if (kSeekCurrent == direction) {
-		file.seekg(offset, std::ios::cur);
-	}
-
-	// TODO - end seek
-
-	if (file.bad())
-	{
-		// todo
-		return false;
-	}
-	if (file.fail())
-	{
-		// todo
-		return false;
-	}
-
-	return true;
+	m_io.seek( offset, direction, m_usrData );
+	return !m_io.error( m_usrData );
 }
 
 bool FileStream::Skip(int32_t offset)
 {
 	return Seek(offset, kSeekCurrent);
-}
-
-bool FileStream::Is_Eos()
-{
-	return file.eof();
-}
-
-int32_t FileStream::GetPosition()
-{
-	return static_cast<int32_t>(file.tellg());
 }
 
 } // close namespace BinkCommon

@@ -20,11 +20,9 @@
 #ifndef _BinkLogError_h_
 #define _BinkLogError_h_
 
-#include <string>
-
 namespace BinkCommon {
 
-void LogError(const std::string &error);
+void LogError(const char *error);
 
 } // close namespace BinkCommon
 

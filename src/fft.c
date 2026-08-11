@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <string.h>
 //#include "libavutil/mathematics.h"
+#include "bd_mem.h"
 #include "fft.h"
 #include "fft-internal.h"
 
@@ -151,10 +152,10 @@ av_cold int ff_fft_init(FFTContext *s, int nbits, int inverse)
     s->nbits = nbits;
     n = 1 << nbits;
 
-    s->revtab = (uint16_t*)malloc(n * sizeof(uint16_t));
+    s->revtab = (uint16_t*)bd_malloc(n * sizeof(uint16_t));
     if (!s->revtab)
         goto fail;
-    s->tmp_buf = (FFTComplex*)malloc(n * sizeof(FFTComplex));
+    s->tmp_buf = (FFTComplex*)bd_malloc(n * sizeof(FFTComplex));
     if (!s->tmp_buf)
         goto fail;
     s->inverse = inverse;
@@ -187,18 +188,18 @@ av_cold int ff_fft_init(FFTContext *s, int nbits, int inverse)
         fft_perm_avx(s);
     } else {
         for(i=0; i<n; i++) {
-            int j = i;
+            int k = i;
             if (s->fft_permutation == FF_FFT_PERM_SWAP_LSBS)
-                j = (j&~3) | ((j>>1)&1) | ((j<<1)&2);
-            s->revtab[-split_radix_permutation(i, n, s->inverse) & (n-1)] = j;
+                k = (k&~3) | ((k>>1)&1) | ((k<<1)&2);
+            s->revtab[-split_radix_permutation(i, n, s->inverse) & (n-1)] = k;
         }
     }
 
     return 0;
  fail:
-    free(s->revtab);
+    bd_free(s->revtab);
     s->revtab = 0;
-    free(s->tmp_buf);
+    bd_free(s->tmp_buf);
     s->tmp_buf = 0;
     return -1;
 }
@@ -215,9 +216,9 @@ static void ff_fft_permute_c(FFTContext *s, FFTComplex *z)
 
 /*av_cold*/ void ff_fft_end(FFTContext *s)
 {
-	free(s->revtab);
+	bd_free(s->revtab);
 	s->revtab = 0;
-	free(s->tmp_buf);
+	bd_free(s->tmp_buf);
 	s->tmp_buf = 0;
 }
 

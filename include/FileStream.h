@@ -20,22 +20,15 @@
 #ifndef _BinkFileStream_h_
 #define _BinkFileStream_h_
 
-#include <string>
-#include <iostream>
-#include <fstream>
 #include <stdint.h>
+#include "binkdec_interface.h"
 
 namespace BinkCommon {
 
 class FileStream
 {
 	public:
-
-		bool Open(const std::string &fileName);
-		bool Is_Open();
-		void Close();
-
-		int32_t ReadBytes(uint8_t *data, uint32_t nBytes);
+		void Open(bdec_file_io_t io, void *usrData);
 
 		uint32_t ReadUint32LE();
 		uint32_t ReadUint32BE();
@@ -45,20 +38,18 @@ class FileStream
 
 		uint8_t ReadByte();
 
-		enum SeekDirection{
-			kSeekCurrent = 0,
-			kSeekStart   = 1,
+		enum SeekDirection {
+			kSeekStart   = 0,
+			kSeekCurrent = 1,
 			kSeekEnd     = 2
 		};
 
 		bool Seek(int32_t offset, SeekDirection = kSeekStart);
 		bool Skip(int32_t offset);
 
-		int32_t GetPosition();
-		bool Is_Eos();
-
 	private:
-		std::ifstream file;
+		bdec_file_io_t m_io{};
+		void *m_usrData = nullptr;
 };
 
 } // close namespace BinkCommon

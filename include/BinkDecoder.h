@@ -65,12 +65,6 @@ const int kFlagGray  = 0x00020000;
 const int kNumTrees = 16;
 
 // exportable interface
-struct BinkHandle
-{
-	bool isValid;
-	int instanceIndex;
-};
-
 struct AudioInfo
 {
 	uint32_t sampleRate;
@@ -89,18 +83,6 @@ struct ImagePlane
 
 typedef ImagePlane YUVbuffer[3];
 
-BinkHandle Bink_Open                 (const char* fileName);
-void       Bink_Close                (BinkHandle &handle);
-uint32_t   Bink_GetNumAudioTracks    (BinkHandle &handle);
-void       Bink_GetFrameSize         (BinkHandle &handle, uint32_t &width, uint32_t &height);
-AudioInfo  Bink_GetAudioTrackDetails (BinkHandle &handle, uint32_t trackIndex);
-uint32_t   Bink_GetAudioData         (BinkHandle &handle, uint32_t trackIndex, int16_t *data);
-float      Bink_GetFrameRate         (BinkHandle &handle);
-uint32_t   Bink_GetNumFrames         (BinkHandle &handle);
-uint32_t   Bink_GetCurrentFrameNum   (BinkHandle &handle);
-uint32_t   Bink_GetNextFrame         (BinkHandle &handle, YUVbuffer yuv);
-void       Bink_GotoFrame            (BinkHandle &handle, uint32_t frameNum);
-
 // for internal use only
 struct Plane
 {
@@ -111,20 +93,7 @@ struct Plane
 	uint32_t height;
 	uint32_t pitch;
 
-	bool Init(uint32_t width, uint32_t height)
-	{
-		// align to 16 bytes
-		width  += width  % 16;
-		height += height % 16;
-
-		current = new uint8_t[width * height];
-		last    = new uint8_t[width * height];
-		this->width  = width;
-		this->height = height;
-		this->pitch  = width;
-
-		return true;
-	}
+	bool Init(uint32_t w, uint32_t h);
 
 	void Swap()
 	{
@@ -136,22 +105,26 @@ class BinkDecoder
 {
 	public:
 
-		uint32_t frameWidth;
-		uint32_t frameHeight;
-
 		BinkDecoder();
 		~BinkDecoder();
 
-		bool Open(const std::string &fileName);
-		uint32_t GetNumFrames();
-		uint32_t GetCurrentFrameNum();
-		float GetFrameRate();
+		bool Open(bdec_file_io_t io, void *usrData);
+		uint32_t GetNumFrames() const;
+		uint32_t GetCurrentFrameNum() const;
+		float GetFrameRate() const;
+		float GetFrameTime() const;
 		void GetNextFrame(YUVbuffer yuv);
 		void GotoFrame(uint32_t frameNum);
 
-		AudioInfo GetAudioTrackDetails(uint32_t trackIndex);
-		uint32_t GetNumAudioTracks();
-		uint32_t GetAudioData(uint32_t trackIndex, int16_t *audioBuffer);
+		AudioInfo GetAudioTrackDetails(uint32_t trackIndex) const;
+		uint32_t GetNumAudioTracks() const;
+		uint32_t GetAudioData(uint32_t trackIndex, int16_t *audioBuffer) const;
+		const AudioTrack* GetAudioTrack( uint32_t trackIndex ) const;
+
+		bool IsTransparent() const { return hasAlpha; }
+
+		uint32_t frameWidth;
+		uint32_t frameHeight;
 
 	private:
 

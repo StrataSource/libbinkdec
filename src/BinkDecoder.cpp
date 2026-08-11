@@ -46,120 +46,7 @@
 #include "BinkDecoder.h"
 #include "LogError.h"
 #include "FFmpeg_includes.h"
-
-std::vector<class BinkDecoder*> classInstances;
-
-BinkHandle Bink_Open(const char* fileName)
-{
-	BinkHandle newHandle;
-	newHandle.isValid = false;
-	newHandle.instanceIndex = -1;
-
-	BinkDecoder *newDecoder = new BinkDecoder();
-	if (!newDecoder->Open(fileName))
-	{
-		delete newDecoder;
-		return newHandle;
-	}
-
-	// loaded ok, make handle valid
-	newHandle.isValid = true;
-#if 0
-	// find a free slot if available
-	for (int i = 0; i < classInstances.size(); i++)
-	{
-		if (!classInstances[i])
-		{
-			class
-		}
-	}
-#endif
-	// add instance to global instance vector
-	classInstances.push_back(newDecoder);
-
-	// get a handle ID
-	// SRS - added int cast for type consistency
-	newHandle.instanceIndex = (int)classInstances.size() - 1;
-	
-	return newHandle;
-}
-
-void Bink_Close(BinkHandle &handle)
-{
-	if (!classInstances.at(handle.instanceIndex))
-	{
-		// invalid handle
-		return;
-	}
-
-	// close bink decoder
-	delete classInstances[handle.instanceIndex];
-	classInstances[handle.instanceIndex] = 0;
-
-	handle.instanceIndex = -1;
-	handle.isValid = false;
-}
-
-uint32_t Bink_GetNumAudioTracks(BinkHandle &handle)
-{
-	if (handle.instanceIndex == -1)
-		return 0;
-	else
-		return classInstances[handle.instanceIndex]->GetNumAudioTracks();
-}
-
-AudioInfo Bink_GetAudioTrackDetails(BinkHandle &handle, uint32_t trackIndex)
-{
-	return classInstances[handle.instanceIndex]->GetAudioTrackDetails(trackIndex);
-}
-
-/* Get a frame's worth of audio data. 
- * 
- * 'data' needs to be a pointer to allocated memory that this function will fill.
- * You can find the size (in bytes) to make this buffer by calling Bink_GetAudioTrackDetails()
- * and checking the 'idealBufferSize' member in the returned AudioInfo struct
- */
-uint32_t Bink_GetAudioData(BinkHandle &handle, uint32_t trackIndex, int16_t *data)
-{
-	return classInstances[handle.instanceIndex]->GetAudioData(trackIndex, data);
-}
-
-uint32_t Bink_GetNumFrames(BinkHandle &handle)
-{
-	return classInstances[handle.instanceIndex]->GetNumFrames();
-}
-
-void Bink_GetFrameSize(BinkHandle &handle, uint32_t &width, uint32_t &height)
-{
-	width  = classInstances[handle.instanceIndex]->frameWidth;
-	height = classInstances[handle.instanceIndex]->frameHeight;
-}
-
-uint32_t Bink_GetCurrentFrameNum(BinkHandle &handle)
-{
-	return classInstances[handle.instanceIndex]->GetCurrentFrameNum();
-}
-
-uint32_t Bink_GetNextFrame(BinkHandle &handle, YUVbuffer yuv)
-{
-	BinkDecoder *decoder = classInstances[handle.instanceIndex];
-
-	uint32_t frameIndex = decoder->GetCurrentFrameNum();
-
-	decoder->GetNextFrame(yuv);
-
-	return frameIndex;
-}
-
-float Bink_GetFrameRate(BinkHandle &handle)
-{
-	return classInstances[handle.instanceIndex]->GetFrameRate();
-}
-
-void Bink_GotoFrame(BinkHandle &handle, uint32_t frameNum)
-{
-	classInstances[handle.instanceIndex]->GotoFrame(frameNum);
-}
+#include "bd_mem.h"
 
 BinkDecoder::BinkDecoder()
 {
@@ -175,39 +62,45 @@ BinkDecoder::~BinkDecoder()
 {
 	for (uint32_t i = 0; i < planes.size(); i++)
 	{
-		delete[] planes[i].current;
-		delete[] planes[i].last;
+		bd_free( planes[i].current );
+		bd_free( planes[i].last );
 	}
 
 	FreeBundles();
 
 	for (uint32_t i = 0; i < audioTracks.size(); i++)
 	{
-		delete[] audioTracks[i]->buffer;
-		delete[] audioTracks[i]->blockBuffer;
+		bd_free( audioTracks[i]->buffer );
+		bd_free( audioTracks[i]->blockBuffer );
 
 		if (kTransformTypeRDFT == audioTracks[i]->transformType)
 			ff_rdft_end(&audioTracks[i]->trans.rdft);
 		else if (kTransformTypeDCT == audioTracks[i]->transformType)
 			ff_dct_end(&audioTracks[i]->trans.dct);
 
-		delete audioTracks[i];
+		audioTracks[i]->~AudioTrack();
+		bd_free( audioTracks[i] );
 	}
 }
 
-uint32_t BinkDecoder::GetNumFrames()
+uint32_t BinkDecoder::GetNumFrames() const
 {
 	return nFrames;
 }
 
-uint32_t BinkDecoder::GetCurrentFrameNum()
+uint32_t BinkDecoder::GetCurrentFrameNum() const
 {
 	return currentFrame;
 }
 
-float BinkDecoder::GetFrameRate()
+float BinkDecoder::GetFrameRate() const
 {
 	return (float)fpsDividend / (float)fpsDivider;
+}
+
+float BinkDecoder::GetFrameTime() const
+{
+	return (float)fpsDivider / (float)fpsDividend;
 }
 
 void BinkDecoder::GotoFrame(uint32_t frameNum)
@@ -218,19 +111,14 @@ void BinkDecoder::GotoFrame(uint32_t frameNum)
 	// what else? (memset some stuff?)
 }
 
-bool BinkDecoder::Open(const std::string &fileName)
+bool BinkDecoder::Open(bdec_file_io_t io, void *usrData)
 {
 	// open the file (read only)
-	file.Open(fileName);
-	if (!file.Is_Open())
-	{
-		BinkCommon::LogError("Can't open file " + fileName);
-		return false;
-	}
+	file.Open(io, usrData);
 
 	// check the file signature
 	signature = file.ReadUint32BE();
-	if ((signature != kBIKfID) 
+	if ((signature != kBIKfID)
 		&& (signature != kBIKgID)
 		&& (signature != kBIKhID)
 		&& (signature != kBIKiID))
@@ -264,7 +152,7 @@ bool BinkDecoder::Open(const std::string &fileName)
 	fpsDividend = file.ReadUint32LE();
 	fpsDivider  = file.ReadUint32LE();
 	videoFlags  = file.ReadUint32LE();
-	
+
 	nAudioTracks = file.ReadUint32LE();
 
 	// audio is available
@@ -291,7 +179,7 @@ bool BinkDecoder::Open(const std::string &fileName)
 	uint32_t pos, nextPos;
 
 	nextPos = file.ReadUint32LE();
-	
+
 	for (uint32_t i = 0; i < nFrames; i++)
 	{
 		pos = nextPos;
@@ -320,7 +208,7 @@ bool BinkDecoder::Open(const std::string &fileName)
 	{
 		// check for audio
 		uint32_t audioPacketSize = file.ReadUint32LE();
-			
+
 		if (audioPacketSize >= 4)
 		{
 			// size in bytes of largest decoded audio
@@ -330,9 +218,9 @@ bool BinkDecoder::Open(const std::string &fileName)
 
 			// size in bytes
 			track->bufferSize = reportedSize;
-			track->buffer = new uint8_t[reportedSize];
+			track->buffer = static_cast<uint8_t*>( bd_malloc( reportedSize ) );
 
-			// skip to next audio track (and -4 for reportedSize int we read) 
+			// skip to next audio track (and -4 for reportedSize int we read)
 			file.Skip(audioPacketSize-4);
 		}
 		else
@@ -350,24 +238,18 @@ bool BinkDecoder::Open(const std::string &fileName)
 	uint32_t width  = frameWidth;
 	uint32_t height = frameHeight;
 
-	// init plane memory
-	Plane newPlane;
-	planes.push_back(newPlane);
-
 	// luma plane
-	planes.back().Init(width, height);
+	planes.emplace_back().Init(width, height);
 
 	// chroma planes
 	width  /= 2;
 	height /= 2;
 
 	// 1
-	planes.push_back(newPlane);
-	planes.back().Init(width, height);
+	planes.emplace_back().Init(width, height);
 
 	// 2
-	planes.push_back(newPlane);
-	planes.back().Init(width, height);
+	planes.emplace_back().Init(width, height);
 
 	// alpha plane
 	if (hasAlpha)
@@ -375,8 +257,7 @@ bool BinkDecoder::Open(const std::string &fileName)
 		width  *= 2;
 		height *= 2;
 
-		planes.push_back(newPlane);
-		planes.back().Init(width, height);
+		planes.emplace_back().Init(width, height);
 	}
 
 	return true;
@@ -397,10 +278,11 @@ void BinkDecoder::GetNextFrame(YUVbuffer yuv)
 		uint32_t audioPacketSize = file.ReadUint32LE();
 
 		frameSize -= 4 + audioPacketSize;
-			
+
 		if (audioPacketSize >= 4)
 		{
 			uint32_t nSamples = file.ReadUint32LE();
+			(void)nSamples;
 
 			AudioPacket(trackIndex, audioPacketSize-4);
 		}
@@ -424,4 +306,19 @@ void BinkDecoder::GetNextFrame(YUVbuffer yuv)
 
 	// frame done
 	currentFrame++;
+}
+
+bool Plane::Init( uint32_t w, uint32_t h )
+{
+	// align to 16 bytes
+	w += ( 0x10 - ( w & 0xF ) ) & 0xF;
+	h += ( 0x10 - ( h & 0xF ) ) & 0xF;
+
+	current = static_cast<uint8_t*>( bd_malloc( static_cast<size_t>( w ) * h ) );
+	last = static_cast<uint8_t*>( bd_malloc( static_cast<size_t>( w ) * h ) );
+	this->width = w;
+	this->height = h;
+	this->pitch = w;
+
+	return true;
 }
